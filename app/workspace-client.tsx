@@ -8,12 +8,13 @@ import type { LeadWorkspaceSnapshot } from "@/lib/types";
 type Props = {
   workspace: LeadWorkspaceSnapshot;
   isOpenAiReady: boolean;
+  loadError?: string | null;
 };
 
-export function WorkspaceClient({ workspace, isOpenAiReady }: Props) {
+export function WorkspaceClient({ workspace, isOpenAiReady, loadError = null }: Props) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState<string>(loadError ?? "");
   const [isPending, startTransition] = useTransition();
   const deferredSelectedIds = useDeferredValue(selectedIds);
 
@@ -32,7 +33,13 @@ export function WorkspaceClient({ workspace, isOpenAiReady }: Props) {
       body: formData
     });
 
-    const payload = (await response.json()) as { importedCount?: number; error?: string };
+    let payload: { importedCount?: number; skippedCount?: number; error?: string } = {};
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      setStatus(`Import failed with status ${response.status}.`);
+      return;
+    }
 
     if (!response.ok) {
       setStatus(payload.error ?? "Import failed.");
@@ -42,7 +49,9 @@ export function WorkspaceClient({ workspace, isOpenAiReady }: Props) {
     startTransition(() => {
       router.refresh();
     });
-    setStatus(`Imported ${payload.importedCount ?? 0} contacts.`);
+    const skipped = payload.skippedCount ?? 0;
+    const base = `Imported ${payload.importedCount ?? 0} contacts.`;
+    setStatus(skipped ? `${base} ${skipped} row${skipped === 1 ? "" : "s"} skipped.` : base);
   }
 
   async function generateDrafts(contactIds: string[]) {
@@ -56,7 +65,13 @@ export function WorkspaceClient({ workspace, isOpenAiReady }: Props) {
       body: JSON.stringify({ contactIds })
     });
 
-    const payload = (await response.json()) as { updatedCount?: number; error?: string };
+    let payload: { updatedCount?: number; error?: string } = {};
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      setStatus(`Draft generation failed with status ${response.status}.`);
+      return;
+    }
 
     if (!response.ok) {
       setStatus(payload.error ?? "Draft generation failed.");
@@ -71,6 +86,15 @@ export function WorkspaceClient({ workspace, isOpenAiReady }: Props) {
 
   return (
     <main className="page-shell">
+      {loadError ? (
+        <section className="panel load-error-banner" role="alert">
+          <p className="eyebrow">Workspace load warning</p>
+          <p>{loadError}</p>
+          <p className="helper-copy">
+            Showing an empty workspace. You can still upload a CSV to try again.
+          </p>
+        </section>
+      ) : null}
       <section className="hero workspace-hero">
         <div className="hero-copy">
           <p className="eyebrow">Lead Research Workspace</p>

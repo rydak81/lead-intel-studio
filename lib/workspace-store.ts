@@ -5,6 +5,13 @@ import { parseLeadExportCsv } from "@/lib/csv";
 import { enrichContact, generateOutreachDraft } from "@/lib/workflows";
 import type { ContactRecord, LeadWorkspaceSnapshot } from "@/lib/types";
 
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
 type ContactRow = {
   id: string;
   source: string;
@@ -66,17 +73,31 @@ function mapRowToContact(row: ContactRow): ContactRecord {
 }
 
 export async function importContactsFromCsv(input: { csvText: string; fileName: string }) {
+  if (!input.csvText.trim()) {
+    throw new ValidationError("The uploaded CSV file is empty.");
+  }
+
+  const parsedContacts = parseLeadExportCsv(input.csvText);
+
+  if (!parsedContacts.length) {
+    throw new ValidationError(
+      "No importable rows were found. The CSV must include First name, Last name, or Company columns."
+    );
+  }
+
   const db = await getDb();
   const importId = randomUUID();
 
   await db.query("INSERT INTO imports (id, file_name) VALUES ($1, $2)", [importId, input.fileName]);
 
-  const parsedContacts = parseLeadExportCsv(input.csvText);
+  let importedCount = 0;
+  const failures: string[] = [];
 
   for (const contact of parsedContacts) {
-    const enriched = await enrichContact(contact);
+    try {
+      const enriched = await enrichContact(contact);
 
-    await db.query(
+      await db.query(
       `
         INSERT INTO contacts (
           id, source, import_id, first_name, last_name, full_name, title, company_name,
@@ -157,9 +178,20 @@ export async function importContactsFromCsv(input: { csvText: string; fileName: 
         JSON.stringify(enriched.sourceEvidence)
       ]
     );
+      importedCount += 1;
+    } catch (error) {
+      const label = contact.fullName || contact.companyName || contact.id;
+      console.error(`Failed to persist contact ${label}:`, error);
+      failures.push(label);
+    }
   }
 
-  return { importId, importedCount: parsedContacts.length };
+  return {
+    importId,
+    importedCount,
+    skippedCount: failures.length,
+    skipped: failures
+  };
 }
 
 export async function generateDraftsForContacts(contactIds: string[]) {

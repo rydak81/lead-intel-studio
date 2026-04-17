@@ -1,11 +1,34 @@
 const OPENAI_API_URL = "https://api.openai.com/v1/responses";
 
 function getModel() {
-  return process.env.OPENAI_MODEL ?? "gpt-5-mini";
+  return process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 }
 
 export function isOpenAiConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
+}
+
+type ResponsesPayload = {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{ text?: string; type?: string }>;
+  }>;
+};
+
+function extractOutputText(payload: ResponsesPayload): string {
+  if (payload.output_text && payload.output_text.trim()) {
+    return payload.output_text.trim();
+  }
+
+  const fragments: string[] = [];
+  for (const item of payload.output ?? []) {
+    for (const content of item.content ?? []) {
+      if (content.text) {
+        fragments.push(content.text);
+      }
+    }
+  }
+  return fragments.join("\n").trim();
 }
 
 export async function createOpenAiText(input: string) {
@@ -13,26 +36,43 @@ export async function createOpenAiText(input: string) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
-  const tools = process.env.OPENAI_ENABLE_WEB_RESEARCH === "true" ? [{ type: "web_search" }] : [];
+  const body: Record<string, unknown> = {
+    model: getModel(),
+    input
+  };
 
-  const response = await fetch(OPENAI_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: getModel(),
-      tools,
-      input
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${errorText}`);
+  if (process.env.OPENAI_ENABLE_WEB_RESEARCH === "true") {
+    body.tools = [{ type: "web_search_preview" }];
   }
 
-  const payload = (await response.json()) as { output_text?: string };
-  return payload.output_text?.trim() ?? "";
+  let response: Response;
+  try {
+    response = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown network error";
+    throw new Error(`OpenAI request failed: ${message}`);
+  }
+
+  if (!response.ok) {
+    let details = "";
+    try {
+      details = await response.text();
+    } catch {
+      details = "";
+    }
+    const snippet = details.slice(0, 500);
+    throw new Error(
+      `OpenAI request failed with status ${response.status}${snippet ? `: ${snippet}` : ""}`
+    );
+  }
+
+  const payload = (await response.json()) as ResponsesPayload;
+  return extractOutputText(payload);
 }

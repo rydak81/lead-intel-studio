@@ -427,3 +427,21 @@ pre {
     text-align: left;
   }
 }
+
+.load-error-banner {
+  border: 1px solid rgba(163, 76, 33, 0.35);
+  background: rgba(241, 215, 182, 0.45);
+  color: #6b2f13;
+  margin-bottom: 18px;
+  padding: 18px 22px;
+}
+
+.load-error-banner .eyebrow {
+  color: #a34c21;
+}
+
+.load-error-banner .helper-copy {
+  color: #6b2f13;
+  opacity: 0.8;
+}
+

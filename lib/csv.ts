@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import Papa from "papaparse";
 import { z } from "zod";
 
@@ -33,7 +35,12 @@ export function parseLeadExportCsv(csvText: string): ContactRecord[] {
     skipEmptyLines: true
   });
 
-  return parsed.data.flatMap((row, index) => {
+  if (parsed.errors.length && !parsed.data.length) {
+    const message = parsed.errors[0]?.message ?? "Unknown CSV parsing error.";
+    throw new Error(`Unable to parse CSV: ${message}`);
+  }
+
+  return parsed.data.flatMap((row) => {
     const result = exportCsvRow.safeParse(row);
     if (!result.success) {
       return [];
@@ -49,7 +56,7 @@ export function parseLeadExportCsv(csvText: string): ContactRecord[] {
 
     return [
       {
-        id: `csv-${index + 1}`,
+        id: randomUUID(),
         source: "csv",
         firstName,
         lastName,

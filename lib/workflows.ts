@@ -100,7 +100,8 @@ Keep it specific, grounded, and useful for cold outreach.
       ...base,
       researchSummary: aiSummary || base.researchSummary
     };
-  } catch {
+  } catch (error) {
+    console.warn("OpenAI enrichment failed, using heuristic fallback:", error);
     return base;
   }
 }
@@ -169,7 +170,8 @@ Body:
       callToAction: "Would it be worth sending over a tailored perspective?",
       personalizationAnchors: input.personalizationAnchors
     };
-  } catch {
+  } catch (error) {
+    console.warn("OpenAI draft generation failed, using heuristic fallback:", error);
     return {
       contactId: contact.id,
       channel,
